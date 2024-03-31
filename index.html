@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PGlite Table Editor Demo</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #EBF2FA;
+            color: #333;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            height: 100vh;
+        }
+
+        .container {
+            width: 95%;
+            max-width: 1200px;
+            margin-top: 20px;
+            background: #FFFFFF;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .toolbar {
+            background-color: #FFFFFF;
+            border-bottom: 2px solid #f0f0f0;
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .toolbar button, .toolbar textarea {
+            padding: 8px 12px;
+            border-radius: 4px;
+            border: 2px solid #3182CE;
+            background-color: #3182CE;
+            color: white;
+            font-size: 14px;
+            margin-right: 8px;
+            cursor: pointer;
+        }
+
+        .toolbar textarea {
+            width: 100%;
+            margin-right: 8px;
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            background-color: #f7f7f7;
+            color: #333;
+            resize: vertical;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+
+        .toolbar button:hover {
+            background-color: #2c5282;
+        }
+
+        button:disabled, textarea:disabled {
+            color: #999;
+            background-color: #ddd;
+            border-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+
+        th, td {
+            padding: 12px 20px;
+            border-bottom: 1px solid #E2E8F0;
+            text-align: left;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        th {
+            background-color: #3182CE;
+            color: #FFF;
+        }
+
+        td.editable {
+            cursor: pointer;
+            background-color: #f0f0f0;
+        }
+
+        .status {
+            padding: 10px 20px;
+            background-color: #f7f7f7;
+            color: #2c5282;
+            border-top: 1px solid #E2E8F0;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="toolbar">
+        <div>
+            <button id="addRowButton" disabled>Stage New Row</button>
+            <button id="submitChangesButton" style="display: none">Submit Changes</button>
+            <button id="refreshButton" disabled>Refresh Table</button>
+        </div>
+        <div>
+            <textarea id="ddlInput" placeholder="Enter DDL command here" rows="4">CREATE TABLE IF NOT EXISTS test (id SERIAL PRIMARY KEY, message TEXT);</textarea>
+            <button id="updateDDLButton">Update DDL & Reinitialize DB</button>
+        </div>
+        <div>
+            <textarea id="sqlInput" placeholder="Enter SQL command here" rows="4" disabled>select 1;</textarea>
+            <button id="executeSqlButton" disabled>Execute SQL</button>
+        </div>
+    </div>
+
+    <table id="dataTable">
+    </table>
+    <div class="status" id="status">Initializing...</div>
+</div>
+
+<script type="module">
+    import { PGlite } from "https://cdn.jsdelivr.net/npm/@electric-sql/pglite/dist/index.js";
+
+    const addRowButton = document.getElementById('addRowButton');
+    const statusElement = document.getElementById('status');
+    const submitChangesButton = document.getElementById('submitChangesButton');
+    const dataTable = document.getElementById('dataTable');
+    const sqlInput = document.getElementById('sqlInput');
+    const ddlInput = document.getElementById('ddlInput');
+    let db = null;
+    let stagedRows = [];
+    async function updateDDLAndReinitializeDB() {
+        const ddl = ddlInput.value.trim();
+        if (!ddl) {
+            setStatus("No DDL command entered.");
+            return;
+        }
+        await initializeDB(ddl); // Pass the DDL command to initializeDB
+    }
+    function enableUI() {
+        document.getElementById('addRowButton').disabled = false;
+        document.getElementById('refreshButton').disabled = false;
+        document.getElementById('executeSqlButton').disabled = false;
+        document.getElementById('sqlInput').disabled = false;
+    }
+
+    async function initializeDB(ddl = "CREATE TABLE IF NOT EXISTS test (id SERIAL PRIMARY KEY, message TEXT);") {
+        await window.indexedDB.databases().then((r) => {
+            for (let i = 0; i < r.length; i++) window.indexedDB.deleteDatabase(r[i].name);
+        })
+        setStatus("Initializing database...");
+        db = new PGlite("idb://my-pgdata");
+        await db.query(ddl); // Use the DDL parameter
+        setStatus("Database initialized and table ensured.");
+        enableUI();
+        fetchTableData();
+    }
+
+    function setStatus(message) {
+        console.log(message);
+        statusElement.textContent = message;
+    }
+
+    function showSubmitChangesButton(show = true) {
+        submitChangesButton.style.display = show ? 'inline-block' : 'none';
+    }
+
+    function showAddRowButton(show = true) {
+        addRowButton.style.display = show ? 'inline-block' : 'none';
+    }
+
+    async function fetchTableData() {
+        setStatus("Fetching table data...");
+        const result = await db.query("SELECT * FROM test;");
+        populateTable(result.rows, result.fields, true);
+        showSubmitChangesButton(false);
+        setStatus("Table data fetched.");
+    }
+
+    function populateTable(rows, fields, isEditable) {
+        showAddRowButton(isEditable);
+        dataTable.innerHTML = `<tr>${fields.map(field => `<th>${field.name}</th>`).join('')}</tr>`;
+        rows.forEach(row => {
+            const rowHtml = `<tr>${fields.map(field => `<td class="${isEditable ? 'editable' : ''}" contenteditable="${isEditable}">${row[field.name]}</td>`).join('')}</tr>`;
+            dataTable.innerHTML += rowHtml;
+        });
+        if (isEditable) {
+            attachChangeEventToEditableCells();
+        }
+    }
+
+    function attachChangeEventToEditableCells() {
+        dataTable.addEventListener('input', event => {
+            if (event.target.tagName === 'TD' && event.target.classList.contains('editable')) {
+                showSubmitChangesButton(true);
+            }
+        });
+    }
+
+    function stageNewRow() {
+        setStatus("Staging new row for addition...");
+        const newRow = {id: 'new', message: 'New Message'};
+        stagedRows.push(newRow);
+        populateTable([...Array.from(dataTable.querySelectorAll('tr')).slice(1).map(tr => ({
+            id: tr.cells[0].innerText,
+            message: tr.cells[1].innerText
+        })), newRow], [{name: 'id'}, {name: 'message'}], true);
+        showSubmitChangesButton(true);
+    }
+
+    async function submitChanges() {
+        setStatus("Submitting changes, including staged rows...");
+        await db.query("BEGIN;");
+        try {
+            const rows = dataTable.querySelectorAll('tr');
+            for (let i = 1; i < rows.length; i++) {
+                const id = rows[i].cells[0].innerText;
+                const message = rows[i].cells[1].innerText;
+                if (id === 'new') {
+                    await db.query("INSERT INTO test (message) VALUES ($1);", [message]);
+                } else {
+                    await db.query("UPDATE test SET message = $1 WHERE id = $2;", [message, id]);
+                }
+            }
+            await db.query("COMMIT;");
+            stagedRows = [];
+            fetchTableData();
+        } catch (error) {
+            await db.query("ROLLBACK;");
+            setStatus(`Error submitting changes: ${error.message}`);
+        }
+    }
+
+    async function executeSQL() {
+        const sql = sqlInput.value.trim();
+        if (!sql) {
+            setStatus("No SQL command entered.");
+            return;
+        }
+        setStatus(`Executing SQL: ${sql}`);
+        try {
+            const result = await db.query(sql);
+            const isSelectQuery = sql.toLowerCase().startsWith("select");
+            if (isSelectQuery) {
+                const isTestTable = /from\s+test\b/i.test(sql);
+                if (isTestTable) {
+                    populateTable(result.rows, result.fields, true);
+                } else {
+                    populateTable(result.rows, result.fields, false);
+                }
+                setStatus(`SQL executed. Rows returned: ${result.rows.length}.`);
+            } else {
+                fetchTableData(); // Refresh the table data
+                setStatus(`SQL executed. Rows affected: ${result.affectedRows ?? 'N/A'}.`);
+            }
+        } catch (error) {
+            setStatus(`Error executing SQL: ${error.message}`);
+        }
+        showSubmitChangesButton(false);
+    }
+
+    addRowButton.onclick = stageNewRow;
+    submitChangesButton.onclick = submitChanges;
+    document.getElementById('refreshButton').onclick = fetchTableData;
+    document.getElementById('executeSqlButton').onclick = executeSQL;
+    document.getElementById('updateDDLButton').onclick = updateDDLAndReinitializeDB;
+    window.onload = () => initializeDB(ddlInput.value.trim());
+</script>
+</body>
+</html>
