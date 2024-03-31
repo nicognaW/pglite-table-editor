@@ -153,8 +153,15 @@
         document.getElementById('executeSqlButton').disabled = false;
         document.getElementById('sqlInput').disabled = false;
     }
+    function disableUI() {
+        document.getElementById('addRowButton').disabled = true;
+        document.getElementById('refreshButton').disabled = true;
+        document.getElementById('executeSqlButton').disabled = true;
+        document.getElementById('sqlInput').disabled = true;
+    }
 
     async function initializeDB(ddl = "CREATE TABLE IF NOT EXISTS test (id SERIAL PRIMARY KEY, message TEXT);") {
+        disableUI()
         await window.indexedDB.databases().then((r) => {
             for (let i = 0; i < r.length; i++) window.indexedDB.deleteDatabase(r[i].name);
         })
