@@ -129,7 +129,7 @@
 </div>
 
 <script type="module">
-    import { PGlite } from "https://cdn.jsdelivr.net/npm/@electric-sql/pglite/dist/index.js";
+    import {PGlite} from "https://cdn.jsdelivr.net/npm/@electric-sql/pglite/dist/index.js";
 
     const addRowButton = document.getElementById('addRowButton');
     const statusElement = document.getElementById('status');
@@ -139,20 +139,24 @@
     const ddlInput = document.getElementById('ddlInput');
     let db = null;
     let stagedRows = [];
+
     async function updateDDLAndReinitializeDB() {
         const ddl = ddlInput.value.trim();
         if (!ddl) {
             setStatus("No DDL command entered.");
             return;
         }
-        await initializeDB(ddl); // Pass the DDL command to initializeDB
+        await nukeIndexedDB();
+        await initializeDB(ddl);
     }
+
     function enableUI() {
         document.getElementById('addRowButton').disabled = false;
         document.getElementById('refreshButton').disabled = false;
         document.getElementById('executeSqlButton').disabled = false;
         document.getElementById('sqlInput').disabled = false;
     }
+
     function disableUI() {
         document.getElementById('addRowButton').disabled = true;
         document.getElementById('refreshButton').disabled = true;
@@ -160,11 +164,14 @@
         document.getElementById('sqlInput').disabled = true;
     }
 
-    async function initializeDB(ddl = "CREATE TABLE IF NOT EXISTS test (id SERIAL PRIMARY KEY, message TEXT);") {
-        disableUI()
+    async function nukeIndexedDB() {
         await window.indexedDB.databases().then((r) => {
             for (let i = 0; i < r.length; i++) window.indexedDB.deleteDatabase(r[i].name);
         })
+    }
+
+    async function initializeDB(ddl = "CREATE TABLE IF NOT EXISTS test (id SERIAL PRIMARY KEY, message TEXT);") {
+        disableUI()
         setStatus("Initializing database...");
         db = new PGlite("idb://my-pgdata");
         await db.query(ddl); // Use the DDL parameter
@@ -267,7 +274,7 @@
                 }
                 setStatus(`SQL executed. Rows returned: ${result.rows.length}.`);
             } else {
-                fetchTableData(); // Refresh the table data
+                fetchTableData();
                 setStatus(`SQL executed. Rows affected: ${result.affectedRows ?? 'N/A'}.`);
             }
         } catch (error) {
